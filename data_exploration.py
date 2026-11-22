@@ -21,7 +21,7 @@ test_file = pq.ParquetFile("data/enveda-CASMI26-molecule-id-mass-spectra/test.pa
 batch = next(train_file.iter_batches(batch_size=5))
 df = batch.to_pandas()
 
-
+"""
 print(df.head())
 
 print("Schema : ", train_file.schema)
@@ -34,3 +34,21 @@ print("---------------\n\n Test file info \n\n-----------------")
 print(test_file.schema)
 print("Rows:", test_file.metadata.num_rows)
 print("Row groups:", test_file.num_row_groups)
+
+"""
+import pyarrow.parquet as pq
+from collections import Counter
+
+parquet_file = train_file
+adduct_counts = Counter()
+
+for batch in parquet_file.iter_batches(
+    batch_size=10000,
+    columns=["adduct"]
+):
+    adduct_counts.update(
+        x for x in batch.column("adduct").to_pylist()
+        if x is not None
+    )
+
+print(adduct_counts)

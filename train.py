@@ -3,12 +3,12 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from config import DATA_PATH, FINGERPRINT_SIZE, MAX_PEAKS, BATCH_SIZE, EPOCHS, LEARNING_RATE, DEVICE
+from config import DATA_PATH, FINGERPRINT_SIZE, MAX_PEAKS, BATCH_SIZE, EPOCHS, LEARNING_RATE, DEVICE, POOLING_METHOD
 from DeepSets import DeepSets
 from streamingDataset import StreamingMassSpecDataset
 
 
-
+"""
 # Pad batches of spectra to the same length and return a mask indicating which peaks are real vs padding
 def collate_spectra(batch):
 
@@ -47,6 +47,41 @@ def collate_spectra(batch):
         mask,
         precursors,
         fingerprints
+    )
+"""
+
+def collate_spectra(samples):
+    # Remove invalid samples
+    samples = [s for s in samples if s is not None]
+
+    max_length = max(s["peaks"].shape[0] for s in samples)
+    batch_size = len(samples)
+    peak_dim = samples[0]["peaks"].shape[1]
+
+    peaks = torch.zeros(batch_size, max_length, peak_dim)
+    mask = torch.zeros(batch_size, max_length, dtype=torch.bool)
+
+    for i, sample in enumerate(samples):
+        n = sample["peaks"].shape[0]
+        peaks[i, :n] = sample["peaks"]
+        mask[i, :n] = True
+
+    precursor = torch.stack([s["precursor"] for s in samples])
+    targets = torch.stack([s["target"] for s in samples])
+
+    # Metadata stays as lists
+    inchikeys = [s["inchikey"] for s in samples]
+    precursor_mzs = [s["precursor_mz"] for s in samples]
+    adducts = [s["adduct"] for s in samples]
+
+    return (
+        peaks,
+        mask,
+        precursor,
+        targets,
+        inchikeys,
+        precursor_mzs,
+        adducts
     )
 
 
@@ -118,7 +153,7 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
     total_loss = 0.0
     total_samples = 0
 
-    for peaks, mask, precursor, targets in tqdm(
+    for peaks, mask, precursor, targets, inchikeys, precursor_mzs, adducts in tqdm(
         loader,
         desc="Training"
     ):
@@ -140,9 +175,10 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         batch_size = peaks.size(0)
 
         total_loss += loss.item() * batch_size
-        total_samples += batch_size
+        total_samples += batch_size        
+        # print(f"total_samples: {total_samples}")
 
-    return total_loss / max(total_samples, 1)
+    return total_loss / max(total_samples, 1), total_samples
 
 
 # Evaluate the model on the validation set
@@ -197,13 +233,15 @@ def evaluate(model, loader, criterion, device):
 # Train the DeepSets model on the dataset
 def train_model():
 
+    total_samples = 0
+
     train_loader, val_loader = create_dataloaders()
 
     model = DeepSets(
         peak_dim=2,
         hidden_dim=128,
         fingerprint_size=FINGERPRINT_SIZE,
-        pooling="sum"
+        pooling=POOLING_METHOD
     ).to(DEVICE)
 
     criterion = nn.BCEWithLogitsLoss()
@@ -219,7 +257,7 @@ def train_model():
 
         print(f"\nEpoch {epoch + 1}/{EPOCHS}")
 
-        train_loss = train_one_epoch(
+        train_loss, train_samples = train_one_epoch(
             model,
             train_loader,
             optimizer,
@@ -234,6 +272,9 @@ def train_model():
             DEVICE
         )
 
+        total_samples += train_samples
+
+        print(f"Total training samples processed: {train_samples}")
         print(f"Train loss: {train_loss:.4f}")
         print(f"Val loss: {val_loss:.4f}")
         print(f"Val Tanimoto: {val_tanimoto:.4f}")

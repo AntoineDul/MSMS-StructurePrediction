@@ -57,7 +57,8 @@ def get_fingerprint(smiles):
     ).astype(np.float32)
 
 
-# Deterministic split
+# Make sure the same molecule is always assigned to the same split not to leak 
+# information from the validation set into the training set and vice versa
 def get_split(inchikey):
     """
     Assign all spectra belonging to a molecule
@@ -95,7 +96,7 @@ class StreamingMassSpecDataset(IterableDataset):
             shuffle_buffer_size if split == "train" else 0
         )
 
-    def process_row(self, smiles, inchikey, precursor_mz, mzs, intensities):
+    def process_row(self, smiles, inchikey, precursor_mz, mzs, intensities, adduct):
 
         # Validate row
         if (
@@ -104,7 +105,9 @@ class StreamingMassSpecDataset(IterableDataset):
             or precursor_mz is None
             or mzs is None
             or intensities is None
+            or adduct is None
         ):
+            print("Invalid row: missing data")
             return None
 
         if not np.isfinite(precursor_mz) or precursor_mz <= 0:
@@ -124,12 +127,12 @@ class StreamingMassSpecDataset(IterableDataset):
         if fingerprint is None:
             return None
 
+        # Convert peaks to numpy arrays
         mzs = np.asarray(mzs, dtype=np.float32)
         intensities = np.asarray(intensities, dtype=np.float32)
 
         # Keep corresponding, valid peaks
         n = min(len(mzs), len(intensities))
-
         mzs = mzs[:n]
         intensities = intensities[:n]
 
@@ -167,11 +170,20 @@ class StreamingMassSpecDataset(IterableDataset):
             dtype=np.float32
         )
 
-        return (
-            torch.from_numpy(peaks),
-            torch.from_numpy(precursor),
-            torch.from_numpy(fingerprint)
-        )
+        peaks_tensor = torch.from_numpy(peaks)
+        precursor_tensor = torch.from_numpy(precursor)
+        fingerprint_tensor = torch.from_numpy(fingerprint)
+
+        return {
+            "peaks": peaks_tensor,
+            "precursor": precursor_tensor,
+            "target": fingerprint_tensor,
+
+            # Metadata for candidate retrieval
+            "inchikey": inchikey,
+            "precursor_mz": float(precursor_mz),
+            "adduct": adduct
+        }
 
     def __iter__(self):
 
@@ -182,7 +194,8 @@ class StreamingMassSpecDataset(IterableDataset):
             "inchikey14",
             "precursor_mz",
             "ms2_mzs",
-            "ms2_normalized_intensities"
+            "ms2_normalized_intensities",
+            "adduct"
         ]
 
         # Buffer used to shuffle training samples
@@ -208,7 +221,8 @@ class StreamingMassSpecDataset(IterableDataset):
                     data["inchikey14"][i],
                     data["precursor_mz"][i],
                     data["ms2_mzs"][i],
-                    data["ms2_normalized_intensities"][i]
+                    data["ms2_normalized_intensities"][i],
+                    data["adduct"][i]
                 )
 
                 if sample is None:
