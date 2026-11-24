@@ -1,19 +1,24 @@
 import torch
 
-DATA_PATH = "data/enveda-CASMI26-molecule-id-mass-spectra/train.parquet"
+TRAIN_DATA_PATH = "data/enveda-CASMI26-molecule-id-mass-spectra/train.parquet"
+TEST_DATA_PATH = "data/enveda-CASMI26-molecule-id-mass-spectra/test.parquet"
 DATABASE_PATH = "data/candidate_database.sqlite"
 
 FINGERPRINT_SIZE = 1024
-FINGERPRINT_RADIUS = 2
+FINGERPRINT_RADIUS = 4
 LRU_CACHE_SIZE = 50000
 
 MAX_PEAKS = 200
 
 BATCH_SIZE = 256
-DATASET_FRACTION = 1.0
-EPOCHS = 10
+DATASET_FRACTION = 1.0  # Use a fraction of the dataset for training (1.0 = 100%)
+EPOCHS = 15
 LEARNING_RATE = 1e-3
 POOLING_METHOD = "mean"  # Options: "mean", "sum"
+
+# Evaluation 
+MODEL_CHECKPOINT_PATH = "2026-11-23_22-59-48_e1_df1.0_deepsets.pt"  # Path to the model checkpoint for evaluation
+
 
 DEVICE = torch.device(
     "cuda" if torch.cuda.is_available() else "cpu"

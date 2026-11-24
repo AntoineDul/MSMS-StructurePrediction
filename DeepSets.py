@@ -20,7 +20,7 @@ class DeepSets(nn.Module):
 
         # rho -> predict fingerprint from aggregated peaks
         self.rho = nn.Sequential(
-            nn.Linear(hidden_dim + 1, 256),
+            nn.Linear(hidden_dim + 2, 256),
             nn.ReLU(),
             nn.Dropout(0.2),
 
@@ -57,9 +57,11 @@ class DeepSets(nn.Module):
         else:
             raise ValueError("Unknown pooling method")
 
+        peak_count = mask.sum(dim=1, keepdim=True).float()
+
         # Add precursor information
         representation = torch.cat(
-            [pooled, precursor],
+            [pooled, precursor, peak_count / 200.0],
             dim=1
         )
 

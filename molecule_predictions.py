@@ -5,7 +5,7 @@ import torch
 from tqdm import tqdm 
 
 from DeepSets import DeepSets
-from config import DEVICE, DATABASE_PATH, ADDUCTS
+from config import DEVICE, DATABASE_PATH, ADDUCTS, MODEL_CHECKPOINT_PATH
 from train import create_dataloaders
 
 
@@ -49,7 +49,7 @@ def retrieve_and_rank(
     cursor,
     predicted_fp,
     neutral_mass,
-    true_inchikey,
+    true_inchikey14,
     mass_tolerance_ppm=10,
     top_k=25,
     fetch_size=1000
@@ -72,14 +72,18 @@ def retrieve_and_rank(
     cursor.execute("""
         SELECT exact_mass, fingerprint
         FROM candidates
-        WHERE inchikey = ?
-    """, (true_inchikey,))
+        WHERE inchikey14 = ?
+    """, (true_inchikey14,))
 
     target = cursor.fetchone()
 
-    if target is None:
-        return [], None, 0
+    #print(f"Target molecule: {true_inchikey14}, neutral mass: {neutral_mass:.4f}, "
+     #     f"mass range: [{min_mass:.4f}, {max_mass:.4f}]")
 
+    if target is None:
+        print(f"Warning: Ground-truth molecule {true_inchikey14} not found in the database.")
+        return [], None, 0
+        
     target_mass, target_fp = target
 
     # Check whether the correct molecule survives mass filtering.
@@ -90,7 +94,7 @@ def retrieve_and_rank(
 
     # Query only mass-compatible candidates.
     cursor.execute("""
-        SELECT inchikey, smiles, exact_mass, fingerprint
+        SELECT inchikey14, smiles, exact_mass, fingerprint
         FROM candidates
         WHERE exact_mass BETWEEN ? AND ?
     """, (min_mass, max_mass))
@@ -122,13 +126,13 @@ def retrieve_and_rank(
                 score > target_score
                 or (
                     score == target_score
-                    and inchikey > true_inchikey
+                    and inchikey > true_inchikey14
                 )
             ):
                 better_than_target += 1
 
             result = {
-                "inchikey": inchikey,
+                "inchikey14": inchikey,
                 "smiles": smiles,
                 "exact_mass": exact_mass,
                 "similarity": score
@@ -202,7 +206,7 @@ def evaluate_retrieval(
 
                 total += 1
 
-                true_inchikey = inchikeys[i]
+                true_inchikey14 = inchikeys[i]
 
                 # Convert precursor m/z to neutral mass
                 try:
@@ -222,7 +226,7 @@ def evaluate_retrieval(
                         cursor=cursor,
                         predicted_fp=probabilities[i],
                         neutral_mass=neutral_mass,
-                        true_inchikey=true_inchikey,
+                        true_inchikey14=true_inchikey14,
                         mass_tolerance_ppm=mass_tolerance_ppm,
                         top_k=top_k
                     )
@@ -284,7 +288,7 @@ if __name__ == "__main__":
     model = DeepSets().to(DEVICE)
 
     checkpoint = torch.load(
-        "best_deepsets.pt",
+        MODEL_CHECKPOINT_PATH,
         map_location=DEVICE,
         weights_only=True
     )

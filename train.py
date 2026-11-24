@@ -1,13 +1,14 @@
+import datetime
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from config import DATA_PATH, FINGERPRINT_SIZE, MAX_PEAKS, BATCH_SIZE, EPOCHS, LEARNING_RATE, DEVICE, POOLING_METHOD
+from config import TRAIN_DATA_PATH, FINGERPRINT_SIZE, MAX_PEAKS, BATCH_SIZE, EPOCHS, LEARNING_RATE, DEVICE, POOLING_METHOD, DATASET_FRACTION
 from DeepSets import DeepSets
 from streamingDataset import StreamingMassSpecDataset
 
-
+# Old collate function
 """
 # Pad batches of spectra to the same length and return a mask indicating which peaks are real vs padding
 def collate_spectra(batch):
@@ -50,6 +51,7 @@ def collate_spectra(batch):
     )
 """
 
+# Improved collate function to include metadata for candidate retrieval
 def collate_spectra(samples):
     # Remove invalid samples
     samples = [s for s in samples if s is not None]
@@ -89,7 +91,7 @@ def collate_spectra(samples):
 def create_dataloaders():
 
     train_dataset = StreamingMassSpecDataset(
-        parquet_path=DATA_PATH,
+        parquet_path=TRAIN_DATA_PATH,
         split="train",
         batch_size=2048,
         max_peaks=MAX_PEAKS,
@@ -97,7 +99,7 @@ def create_dataloaders():
     )
 
     val_dataset = StreamingMassSpecDataset(
-        parquet_path=DATA_PATH,
+        parquet_path=TRAIN_DATA_PATH,
         split="val",
         batch_size=2048,
         max_peaks=MAX_PEAKS,
@@ -123,10 +125,10 @@ def create_dataloaders():
 
 
 # Calculate Tanimoto similarity between predicted and target fingerprints
-def tanimoto_similarity(predictions, targets):
+def tanimoto_similarity(predictions, targets, threshold=0.2):
 
     # Convert probabilities into binary fingerprints
-    predictions = (predictions >= 0.5).float()
+    predictions = (predictions >= threshold).float()
     targets = targets.float()
 
     intersection = (predictions * targets).sum(dim=1)
@@ -144,6 +146,73 @@ def tanimoto_similarity(predictions, targets):
     similarity[union == 0] = 1.0
 
     return similarity.mean().item()
+
+def soft_tanimoto_similarity(probabilities, targets):
+    # Soft Tanimoto for the batch (using probabilities instead of binary predictions)
+    soft_intersection = (probabilities * targets).sum(dim=1)
+
+    soft_union = (
+        probabilities.sum(dim=1)
+        + targets.sum(dim=1)
+        - soft_intersection
+    )
+
+    soft_tanimoto = (
+        soft_intersection / soft_union.clamp(min=1e-8)
+    )
+
+    return soft_tanimoto.sum().item()
+
+# Evaluate Tanimoto similarity at different thresholds
+def evaluate_thresholds(predictions, targets):
+    targets = targets.float()
+
+    print("Threshold | Mean Tanimoto")
+    print("------------------------")
+
+    for threshold in [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7]:
+        binary_predictions = (predictions >= threshold).float()
+
+        intersection = (binary_predictions * targets).sum(dim=1)
+        union = (
+            binary_predictions.sum(dim=1)
+            + targets.sum(dim=1)
+            - intersection
+        )
+
+        similarity = intersection / union.clamp(min=1e-8)
+        similarity[union == 0] = 1.0
+
+        print(f"{threshold:>9.1f} | {similarity.mean().item():.4f}")
+
+def calculate_pos_weights(train_loader, device):
+
+    positive_counts = torch.zeros(FINGERPRINT_SIZE)
+    total_samples = 0
+
+    for batch in tqdm(train_loader, desc="Calculating pos_weights"):
+
+        targets = batch[3]
+
+        positive_counts += targets.sum(dim=0)
+        total_samples += targets.shape[0]
+
+    negative_counts = total_samples - positive_counts
+
+    # Avoid division by zero
+    positive_counts = positive_counts.clamp(min=1)
+
+    # Calculate negative / positive ratio for each bit
+    weights = negative_counts / positive_counts
+
+    # Use square root to avoid excessively large weights
+    weights = torch.sqrt(weights)
+
+    # Prevent rare bits from receiving enormous weights -> TODO : experiment with max values 5.0, 10.0...
+    weights = weights.clamp(min=1.0, max=5.0)
+
+    return weights.to(device)
+
 
 # Train the model for one epoch 
 def train_one_epoch(model, loader, optimizer, criterion, device):
@@ -181,9 +250,66 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
     return total_loss / max(total_samples, 1), total_samples
 
 
-# Evaluate the model on the validation set
+
+
 @torch.no_grad()
-def evaluate(model, loader, criterion, device):
+def evaluate(model, loader, criterion, device, mean_fingerprint):
+
+    model.eval()
+
+    total_loss = 0.0
+    total_tanimoto = 0.0
+    total_soft_tanimoto = 0.0
+    total_samples = 0
+
+    for (
+        peaks,
+        mask,
+        precursor,
+        targets,
+        inchikeys,
+        precursor_mzs,
+        adducts
+    ) in tqdm(loader, desc="Validation"):
+
+        peaks = peaks.to(device)
+        mask = mask.to(device)
+        precursor = precursor.to(device)
+        targets = targets.to(device)
+
+        logits = model(
+            peaks,
+            mask,
+            precursor
+        )
+
+        loss = criterion(logits, targets)
+
+        probabilities = torch.sigmoid(logits)
+        predictions = (probabilities >= 0.2).float()
+
+        tanimoto = tanimoto_similarity(predictions, targets, threshold=0.45)
+        soft_tanimoto = soft_tanimoto_similarity(probabilities, targets)
+
+        batch_size = peaks.size(0)
+
+        total_loss += loss.item() * batch_size
+        total_tanimoto += tanimoto
+        total_soft_tanimoto += soft_tanimoto
+        total_samples += batch_size
+
+    return (
+        total_loss / total_samples,
+        total_tanimoto / total_samples,
+        total_soft_tanimoto / total_samples
+    )
+
+
+
+
+# Evaluate the model on the validation set -> ISSUE: loads all predictions and targets into memory -> crash for large fraction of dataset
+@torch.no_grad()
+def evaluate_depracated(model, loader, criterion, device, mean_fingerprint):
 
     model.eval()
 
@@ -193,7 +319,7 @@ def evaluate(model, loader, criterion, device):
     all_predictions = []
     all_targets = []
 
-    for peaks, mask, precursor, targets in tqdm(
+    for peaks, mask, precursor, targets, inchikeys, precursor_mzs, adducts in tqdm(
         loader,
         desc="Validation"
     ):
@@ -214,6 +340,7 @@ def evaluate(model, loader, criterion, device):
         total_loss += loss.item() * batch_size
         total_samples += batch_size
 
+        
         all_predictions.append(probabilities.cpu())
         all_targets.append(targets.cpu())
 
@@ -224,8 +351,28 @@ def evaluate(model, loader, criterion, device):
 
     avg_tanimoto = tanimoto_similarity(
         predictions,
-        targets
+        targets,
+        0.2
     )
+
+    baseline_predictions = mean_fingerprint.unsqueeze(0).expand(
+        targets.shape[0], -1
+    )
+
+    print( "Baseline avg fingerprint Tanimoto similarity:")
+    evaluate_thresholds(baseline_predictions, targets)
+    
+    print("Predictions Tanimoto similarity at different thresholds:")
+    evaluate_thresholds(predictions, targets)
+    
+    print("Average active target bits:",
+      targets.sum(dim=1).mean().item())
+
+    print("Average predicted probability:",
+        predictions.mean().item())
+
+    print("Average predicted active bits at 0.2:",
+        (predictions >= 0.2).sum(dim=1).float().mean().item())
 
     return avg_loss, avg_tanimoto
 
@@ -244,7 +391,12 @@ def train_model():
         pooling=POOLING_METHOD
     ).to(DEVICE)
 
-    criterion = nn.BCEWithLogitsLoss()
+    # Calculate positive weights for the loss function
+    pos_weights = calculate_pos_weights(train_loader, DEVICE)
+
+    criterion = nn.BCEWithLogitsLoss(
+        pos_weight=pos_weights
+    )
 
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -252,6 +404,21 @@ def train_model():
     )
 
     best_val_loss = float("inf")
+
+    """
+    # Compute mean fingerprint for the training set (baseline to compare results)
+    bit_counts = torch.zeros(1024)
+    num_samples = 0
+
+    for batch in tqdm(train_loader, desc="Calculating mean fingerprint"):
+        targets = batch[3]
+
+        bit_counts += targets.sum(dim=0)
+        num_samples += targets.shape[0]
+
+    mean_fingerprint = bit_counts / num_samples
+    """
+    mean_fingerprint = 0
 
     for epoch in range(EPOCHS):
 
@@ -265,11 +432,12 @@ def train_model():
             DEVICE
         )
 
-        val_loss, val_tanimoto = evaluate(
+        val_loss, val_tanimoto, val_soft_tanimoto = evaluate(
             model,
             val_loader,
             criterion,
-            DEVICE
+            DEVICE,
+            mean_fingerprint
         )
 
         total_samples += train_samples
@@ -278,6 +446,7 @@ def train_model():
         print(f"Train loss: {train_loss:.4f}")
         print(f"Val loss: {val_loss:.4f}")
         print(f"Val Tanimoto: {val_tanimoto:.4f}")
+        print(f"Val Soft Tanimoto: {val_soft_tanimoto:.4f}")
 
         if val_loss < best_val_loss:
 
@@ -289,9 +458,10 @@ def train_model():
                     "optimizer_state_dict": optimizer.state_dict(),
                     "epoch": epoch,
                     "val_loss": val_loss,
-                    "val_tanimoto": val_tanimoto
+                    "val_tanimoto": val_tanimoto,
+                    "val_soft_tanimoto": val_soft_tanimoto
                 },
-                "best_deepsets.pt"
+                f"{datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_e{epoch+1}_df{DATASET_FRACTION}_deepsets.pt"
             )
 
             print("Best model saved!")
@@ -302,110 +472,3 @@ def train_model():
 if __name__ == "__main__":
     model = train_model()
 
-
-
-
-
-
-
-
-
-
-
-# Deprecated
-
-
-"""
-# Convert a SMILES string into a binary Morgan fingerprint
-def smiles_to_fingerprint(smiles):
-
-    # Get molecule from SMILES
-    mol = Chem.MolFromSmiles(smiles)
-
-    if mol is None:
-        return None
-
-    fp = fp_generator.GetFingerprint(mol)
-
-    arr = np.zeros(FINGERPRINT_SIZE, dtype=np.float32)
-
-    DataStructs.ConvertToNumpyArray(fp, arr)
-
-    return arr
-
-# Generate one fingerprint per unique SMILES
-def generate_fingerprints(df):
-
-    unique_smiles = df["normalized_smiles"].unique()
-
-    # Initialize dictionary to store fingerprints
-    fingerprint_dict = {}
-
-    # Iterate over SMILES and generate fingerprints
-    for smiles in tqdm(unique_smiles, desc="Generating fingerprints"):
-
-        fp = smiles_to_fingerprint(smiles)
-
-        if fp is not None:
-            fingerprint_dict[smiles] = fp
-
-    # Remove molecules with invalid SMILES
-    df = df[
-        df["normalized_smiles"].isin(fingerprint_dict)
-    ].reset_index(drop=True)
-
-    return df, fingerprint_dict
-
-
-# Load the relevant training columns from Parquet
-def load_data(path):
-
-    columns = [
-        "normalized_smiles",
-        "inchikey14",
-        "precursor_mz",
-        "ms2_mzs",
-        "ms2_normalized_intensities"
-    ]
-
-    df = pd.read_parquet(path, columns=columns)
-
-    # Remove rows with missing essential information
-    df = df.dropna(subset=[
-        "normalized_smiles",
-        "inchikey14",
-        "precursor_mz",
-        "ms2_mzs",
-        "ms2_normalized_intensities"
-    ])
-
-    # Remove invalid precursor masses
-    df = df[df["precursor_mz"] > 0]
-
-    return df.reset_index(drop=True)
-
-    
-# Split the dataset into training and validation sets ensuring that spectrums from the same molecule (ided by inchikey14) are NOT split across sets
-def split_data(df, test_size=0.1):
-
-    splitter = GroupShuffleSplit(
-        n_splits=1,
-        test_size=test_size,
-        random_state=42
-    )
-
-    train_idx, val_idx = next(
-        splitter.split(
-            df,
-            groups=df["inchikey14"]
-        )
-    )
-
-    train_df = df.iloc[train_idx].reset_index(drop=True)
-    val_df = df.iloc[val_idx].reset_index(drop=True)
-
-    return train_df, val_df
-
-        
-        
-"""
