@@ -3,8 +3,12 @@
 This is Mohammed's part of the CASMI26 project: proposal Architecture 2, "spectrum–graph matching". MIST is the
 spectrum encoder, which the proposal said would be "tested if feasible".
 
-The whole pipeline is in [`dual_encoder_reranker.ipynb`](dual_encoder_reranker.ipynb), on the full Kaggle data. Figures
-are in `figures/` and tables in `results/`.
+| Path | What it is |
+|---|---|
+| [`dual_encoder_reranker.ipynb`](dual_encoder_reranker.ipynb) | data splits, training, evaluation, figures (full Kaggle data) |
+| [`dualrerank.py`](dualrerank.py) | model, chemistry and scoring code, shared with the Kaggle notebook |
+| [`kaggle/`](kaggle/) | offline Kaggle inference notebook + upload instructions |
+| `figures/`, `results/` | figures and result tables used in the report |
 
 ## What it does
 
@@ -113,7 +117,7 @@ The GNN matters more as isomer ambiguity grows. With more than 100 same-formula 
 - 0.13 for the dual model without the GNN;
 - 0.31 for the dual model with the GNN.
 
-**Cost:** 4.7M parameters, 37 min training, 1.4 GiB peak GPU memory, and about 10 ms per spectrum.
+**Cost:** 4.7M parameters, 37 min training, 1.4 GiB peak GPU memory, and about 8–10 ms per spectrum.
 
 **Figures** (`figures/`):
 - `00` architecture
@@ -125,17 +129,17 @@ The GNN matters more as isomer ambiguity grows. With more than 100 same-formula 
 - `06` example ranking
 - `07` natural products, one spectrum vs aggregated
 
-The earlier pilot on the ~50k-structure sample catalog is kept in `results/pilot_sample_catalog/`.
-
 ### Kaggle
 
-`results/submission.csv` follows `sample_submission.csv`: 400 `molecule_id`s with 25 SMILES each, built from
-`test.parquet`. CASMI26 is a **code competition**, so only a `submission.csv` produced by a Kaggle notebook running
-offline is scored. Competing would require two steps:
-1. upload the catalog cache and checkpoints as a Kaggle Dataset;
-2. run this inference code in a Kaggle notebook.
+CASMI26 is a code competition: only a `submission.csv` written by a Kaggle notebook running offline is scored.
 
-Retrieval also cannot recover Kaggle's class-3 (novel) structures.
+- **Inference notebook:** [`kaggle/casmi26_dual_reranker_inference.ipynb`](kaggle/casmi26_dual_reranker_inference.ipynb).
+  It loads the bundle exported by section 10 of the main notebook, so it needs no RDKit and no internet.
+- **Tested locally:** about 1 minute on the visible `test.parquet`. Its 400 ranked lists match the main pipeline's
+  exactly.
+- **Upload and submit:** see [`kaggle/README.md`](kaggle/README.md).
+
+Retrieval cannot recover Kaggle's class-3 (novel) structures.
 
 ## Literature
 

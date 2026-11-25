@@ -1,0 +1,13 @@
+{
+  "id": "<your-username>/casmi26-dual-reranker-inference",
+  "title": "CASMI26 dual reranker inference",
+  "code_file": "casmi26_dual_reranker_inference.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": false,
+  "dataset_sources": ["<your-username>/casmi26-dual-reranker"],
+  "competition_sources": ["enveda-CASMI26-molecule-id-mass-spectra"],
+  "kernel_sources": []
+}

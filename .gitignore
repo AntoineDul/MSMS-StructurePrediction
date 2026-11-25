@@ -4,3 +4,5 @@ __pycache__/
 mo_graph/cache/
 mo_graph/checkpoints/
 mo_graph/train_log.txt
+mo_graph/kaggle/bundle/
+mo_graph/kaggle/submission.csv

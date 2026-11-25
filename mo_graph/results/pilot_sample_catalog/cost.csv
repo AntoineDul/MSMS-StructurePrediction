@@ -1,4 +1,0 @@
-,parameters,train minutes,peak GPU GiB (train),"test ms / spectrum (all methods, incl. annotation)"
-Dual MIST+GNN,4656096,33.5,1.3,7.322
-Dual (no GNN),3254747,19.8,1.14,
-DeepSets FP (Milton),354432,,,
