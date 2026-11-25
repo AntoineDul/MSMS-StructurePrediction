@@ -1,0 +1,4 @@
+catalog,recall,median_pool,Mass only MRR@25,Dual MIST+GNN MRR@25,Dual MIST+GNN Top-1
+A. training only,1.0,13.0,0.392,0.6265,0.452
+B. training + COCONUT,1.0,58.0,0.1585,0.325,0.16
+"C. as B, answers only via COCONUT",0.988,58.0,0.1574,0.3131,0.148

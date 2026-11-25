@@ -199,11 +199,41 @@ def load_catalog(folder):
     return G
 
 
+def _flat_ranges(starts, counts):
+    return np.repeat(starts - np.cumsum(counts) + counts, counts) + np.arange(counts.sum())
+
+
+def subset_catalog(G, idx):
+    """Rows `idx` of a catalog dict (graphs are stored flat, so atoms/bonds are sliced per molecule)."""
+    idx = np.asarray(idx)
+    a_off = np.concatenate([[0], np.cumsum(G["atom_n"])])[:-1]; b_off = np.concatenate([[0], np.cumsum(G["bond_n"])])[:-1]
+    out = {k: np.asarray(G[k])[idx] for k in G if k not in ("atom_x", "bond")}
+    out["atom_x"] = G["atom_x"][_flat_ranges(a_off[idx], G["atom_n"][idx])]
+    out["bond"] = G["bond"][_flat_ranges(b_off[idx], G["bond_n"][idx])]
+    return out
+
+
+def concat_catalogs(*Gs):
+    return {k: np.concatenate([np.asarray(G[k]) for G in Gs]) for k in Gs[0]}
+
+
+def restrict_catalog(G, masses, ppm=10.0, margin=25):
+    """Keep only the rows a pool around these neutral masses can use: the 10 ppm window plus `margin` mass-neighbours
+    on each side (what `Scorer.molecule_pool(fill=margin)` may pad with). Pools are unchanged, but a large catalog
+    then fits in GPU memory and only the needed graphs are embedded."""
+    order = np.argsort(G["mass"], kind="stable"); m = np.asarray(G["mass"])[order]
+    masses = np.asarray(masses, float); masses = masses[np.isfinite(masses)]
+    lo = np.maximum(np.searchsorted(m, masses * (1 - ppm * 1e-6)) - margin, 0)
+    hi = np.minimum(np.searchsorted(m, masses * (1 + ppm * 1e-6), side="right") + margin, len(m))
+    d = np.zeros(len(m) + 1, int); np.add.at(d, lo, 1); np.add.at(d, hi, -1)
+    return subset_catalog(G, order[np.cumsum(d)[:-1] > 0])
+
+
 class Catalog:
     """Candidate structures sorted by neutral mass, with compact graph/fingerprint tensors on the device."""
 
     def __init__(self, G, device):
-        order = np.argsort(G["mass"])
+        order = np.argsort(G["mass"], kind="stable")
         a_off = np.concatenate([[0], np.cumsum(G["atom_n"])]); b_off = np.concatenate([[0], np.cumsum(G["bond_n"])])
         self.ik14, self.smiles, self.formula, self.mass = G["ik14"][order], G["smiles"][order], G["formula"][order], G["mass"][order]
         atom_x = np.concatenate([G["atom_x"][a_off[i]:a_off[i + 1]] for i in order])
@@ -509,7 +539,7 @@ class Scorer:
         nm = np.nanmedian(self.sp.neutral[qs])
         lo, hi = self.cat.window(nm, self.ppm)
         if hi - lo < fill:
-            near = np.argsort(np.abs(self.cat.mass[max(0, lo - fill):hi + fill] - nm))[:fill] + max(0, lo - fill)
+            near = np.argsort(np.abs(self.cat.mass[max(0, lo - fill):hi + fill] - nm), kind="stable")[:fill] + max(0, lo - fill)
             return np.unique(np.concatenate([np.arange(lo, hi), near]))
         return np.arange(lo, hi)
 

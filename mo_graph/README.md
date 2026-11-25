@@ -13,8 +13,9 @@ spectrum encoder, which the proposal said would be "tested if feasible".
 ## What it does
 
 The task follows Enveda CASMI 2026: rank candidate structures for each molecule, scored by MRR@25 on the InChIKey first
-block. The candidates are every catalog structure (all 275,810 training structures) within 10 ppm of the neutral mass
-implied by the precursor m/z and adduct. There is no fingerprint shortlist. Each candidate is scored by three parts:
+block. The candidates are every catalog structure within 10 ppm of the neutral mass implied by the precursor m/z and
+adduct. There is no fingerprint shortlist. The catalog holds the 275,810 training structures; for Kaggle, 449,399
+COCONUT natural products are added (section 10 of the notebook). Each candidate is scored by three parts:
 
 1. **MIST-style spectrum encoder** (Goldman et al., 2023). Peaks are annotated with subformulae of *the candidate's*
    formula, so no ground-truth formula is needed at inference. A transformer encodes the fragment and neutral-loss
@@ -62,10 +63,13 @@ Data, all git-ignored:
 - `data/enveda-CASMI26-molecule-id-mass-spectra/`: `train.parquet`, `test.parquet` and `sample_submission.csv` from
   Kaggle.
 - `data/recap/`: Milton's recap zip (`data/*` and `models/`).
+- `data/coconut/coconut_csv_lite-11-2026.zip` (191 MB, CC0), from
+  [coconut.naturalproducts.net/download](https://coconut.naturalproducts.net/download). Only section 10 needs it.
 
 Run the notebook from `mo_graph/`. Timings on an RTX 3050 Ti (4 GB):
-- **Full run:** about 75 minutes. Featurising the catalog takes about 3 minutes the first time and is then cached.
-- **From checkpoints:** about 6 minutes. Existing checkpoints in `mo_graph/checkpoints/` are reused unless
+- **Full run:** about 75 minutes. Featurising the catalog takes about 3 minutes the first time and COCONUT another
+  7 minutes; both are cached.
+- **From checkpoints:** about 13 minutes. Existing checkpoints in `mo_graph/checkpoints/` are reused unless
   `RETRAIN=1`.
 - **Smoke test** (`QUICK=1`): about 12 minutes.
 
@@ -88,7 +92,7 @@ Setup:
 | DeepSets FP (Milton's checkpoint) | 0.161 | 0.410 | 0.276 |
 | MIST FP | 0.174 | 0.465 | 0.305 |
 | Dual, no GNN | 0.315 | 0.651 | 0.463 |
-| **Dual MIST + GNN** | **0.415** | **0.753** | **0.560** |
+| **Dual MIST + GNN** | **0.416** | **0.753** | **0.560** |
 
 **Natural products on the test instrument:** `enveda-np-examples`, 250 molecules and 1,184 timsTOF spectra, scored
 per molecule.
@@ -105,8 +109,8 @@ Paired MRR@25 differences with 95% CIs:
 
 | Comparison | Milton's benchmark | Natural products |
 |---|---|---|
-| Dual vs mass only | +0.216 [0.205, 0.228] | +0.235 [0.191, 0.277] |
-| Dual vs its no-GNN ablation | +0.096 [0.086, 0.107] | +0.104 [0.061, 0.146] |
+| Dual vs mass only | +0.217 [0.205, 0.228] | +0.235 [0.191, 0.277] |
+| Dual vs its no-GNN ablation | +0.097 [0.087, 0.107] | +0.104 [0.061, 0.146] |
 | MIST FP vs DeepSets FP | +0.029 [0.022, 0.036] | |
 | Aggregated vs one spectrum (dual) | | +0.036 [0.019, 0.054] |
 
@@ -116,6 +120,19 @@ The GNN matters more as isomer ambiguity grows. With more than 100 same-formula 
 - 0.02 for mass alone;
 - 0.13 for the dual model without the GNN;
 - 0.31 for the dual model with the GNN.
+
+**Expanding the catalog with COCONUT** (section 10, figure 08). The 250 natural products are re-scored, all spectra
+aggregated, with three catalogs. Catalog C imitates Kaggle class 2: the answer is not a training structure, so only
+COCONUT can supply it.
+
+| Catalog | Recall | Median pool | Mass only MRR@25 | Dual MRR@25 |
+|---|---:|---:|---:|---:|
+| A. training structures (275,810) | 1.000 | 13 | 0.392 | 0.627 |
+| B. + COCONUT (725,209) | 1.000 | 58 | 0.159 | 0.325 |
+| C. as B, answers only via COCONUT | 0.988 | 58 | 0.157 | 0.313 |
+
+- COCONUT contains 249 of the 250 answers.
+- About 4× more candidates per pool roughly halves MRR@25, but the dual model still doubles mass alone.
 
 **Cost:** 4.7M parameters, 37 min training, 1.4 GiB peak GPU memory, and about 8–10 ms per spectrum.
 
@@ -128,18 +145,26 @@ The GNN matters more as isomer ambiguity grows. With more than 100 same-formula 
 - `05` breakdown by isomer count and library
 - `06` example ranking
 - `07` natural products, one spectrum vs aggregated
+- `08` natural products with three candidate catalogs (COCONUT)
 
 ### Kaggle
 
 CASMI26 is a code competition: only a `submission.csv` written by a Kaggle notebook running offline is scored.
 
 - **Inference notebook:** [`kaggle/casmi26_dual_reranker_inference.ipynb`](kaggle/casmi26_dual_reranker_inference.ipynb).
-  It loads the bundle exported by section 10 of the main notebook, so it needs no RDKit and no internet.
+  It loads the bundle exported by section 11 of the main notebook, so it needs no RDKit and no internet.
 - **Tested locally:** about 1 minute on the visible `test.parquet`. Its 400 ranked lists match the main pipeline's
   exactly.
 - **Upload and submit:** see [`kaggle/README.md`](kaggle/README.md).
 
-Retrieval cannot recover Kaggle's class-3 (novel) structures.
+| Kaggle submission (public MRR@25) | Score |
+|---|---:|
+| Catalog A: training structures | 0.138 |
+| Catalog B: training + COCONUT | **0.192** |
+
+The top of the public leaderboard is about 0.55. The jump from A to B shows that many hidden test molecules are only
+in COCONUT. The rest of the gap comes from ranking within larger pools; training with COCONUT structures as negatives
+is the next step. Retrieval cannot recover Kaggle's class-3 (novel) structures.
 
 ## Literature
 
@@ -149,6 +174,8 @@ Retrieval cannot recover Kaggle's class-3 (novel) structures.
   trained against candidate sets. This is the closest prior work.
 - **MassSpecGym:** Bushuiev et al., NeurIPS Datasets & Benchmarks (2024). Retrieval protocol; MIST is its strongest
   retrieval baseline.
+- **COCONUT 2.0:** Chandrasekhar et al., *Nucleic Acids Res.* 53, D634 (2025). Open natural-product collection
+  (CC0); the extra candidates.
 - **CSI:FingerID:** Dührkop et al., *PNAS* 112, 12580 (2015). Fingerprint retrieval.
 - **GIN / GINE:** Xu et al., ICLR (2019); Hu et al., ICLR (2020).
 - **MPNN:** Gilmer et al., ICML (2017).

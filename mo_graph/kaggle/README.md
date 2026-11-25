@@ -6,12 +6,12 @@ is that notebook. It needs only numpy, pandas, pyarrow and torch, all preinstall
 
 ## 1. Build the bundle
 
-Run `../dual_encoder_reranker.ipynb`. Its section 10 writes `bundle/` (git-ignored, ~60 MB):
+Run `../dual_encoder_reranker.ipynb`. Its section 11 writes `bundle/` (git-ignored, ~165 MB):
 
 | File | Content |
 |---|---|
 | `dualrerank.py` | model, chemistry and scoring code (same file as `../dualrerank.py`) |
-| `catalog_arrays.npz`, `catalog_meta.parquet` | 275,810 candidate structures: graphs, fingerprints, masses, SMILES |
+| `catalog_arrays.npz`, `catalog_meta.parquet` | 725,209 candidate structures (training + COCONUT): graphs, fingerprints, masses, SMILES |
 | `dual_mist_gnn.pt` | trained dual-encoder weights |
 | `config.json` | model size, adduct vocabulary, tolerances |
 
@@ -58,3 +58,6 @@ When the notebook run finishes on Kaggle, open it and click **Submit to competit
 ```powershell
 kaggle competitions submit -c enveda-CASMI26-molecule-id-mass-spectra -k <your-username>/casmi26-dual-reranker-inference -f submission.csv -v 1 -m "dual MIST+GNN reranker"
 ```
+
+To update an existing dataset after re-exporting the bundle, run `kaggle datasets version -p mo_graph/kaggle/bundle -m "<note>"`.
+Then push the notebook again and submit that version number with `-v`.
