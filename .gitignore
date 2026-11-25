@@ -1,3 +1,6 @@
 data/
 __pycache__/
 *.pt
+mo_graph/cache/
+mo_graph/checkpoints/
+mo_graph/train_log.txt

@@ -1,0 +1,5 @@
+,delta,lo,hi
+Dual MIST+GNN − Mass only,0.1239,0.1132,0.1344
+Dual MIST+GNN − MIST FP,0.1738,0.1597,0.1875
+Dual MIST+GNN − Dual (no GNN),0.0565,0.0476,0.0649
+MIST FP − DeepSets FP,0.033,0.0276,0.0384

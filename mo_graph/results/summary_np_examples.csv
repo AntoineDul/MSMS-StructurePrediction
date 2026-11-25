@@ -1,0 +1,7 @@
+,single spectrum,single spectrum,single spectrum,all spectra (aggregated),all spectra (aggregated),all spectra (aggregated)
+,top1,top5,mrr25,top1,top5,mrr25
+Mass only,0.2091,0.6009,0.3804,0.2212,0.6083,0.392
+DeepSets FP,0.1619,0.4942,0.3153,0.164,0.486,0.3141
+MIST FP,0.1814,0.5426,0.3437,0.184,0.536,0.3447
+Dual (no GNN),0.3252,0.7623,0.5084,0.328,0.804,0.5224
+Dual MIST+GNN,0.4163,0.8195,0.5901,0.452,0.864,0.6265

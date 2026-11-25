@@ -1,0 +1,5 @@
+,delta,lo,hi
+Dual MIST+GNN − Mass only,0.2345,0.1905,0.2773
+Dual MIST+GNN − MIST FP,0.2818,0.2302,0.3305
+Dual MIST+GNN − Dual (no GNN),0.1041,0.0614,0.146
+Dual MIST+GNN − Dual MIST+GNN_single,0.0364,0.0185,0.0543
