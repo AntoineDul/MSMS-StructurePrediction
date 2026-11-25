@@ -1,0 +1,4 @@
+,delta,lo,hi
+Dual MIST+GNN (COCONUT negatives) − Dual MIST+GNN,0.0234,0.0146,0.031
+Dual MIST+GNN (COCONUT negatives) − Mass only,0.2362,0.2253,0.2471
+Dual MIST+GNN − Mass only,0.2128,0.2022,0.2236

@@ -69,7 +69,7 @@ Data, all git-ignored:
 Run the notebook from `mo_graph/`. Timings on an RTX 3050 Ti (4 GB):
 - **Full run:** about 75 minutes. Featurising the catalog takes about 3 minutes the first time and COCONUT another
   7 minutes; both are cached.
-- **From checkpoints:** about 13 minutes. Existing checkpoints in `mo_graph/checkpoints/` are reused unless
+- **From checkpoints:** about 25 minutes, mostly rebuilding the catalog-B training lists in section 11. Existing checkpoints in `mo_graph/checkpoints/` are reused unless
   `RETRAIN=1`.
 - **Smoke test** (`QUICK=1`): about 12 minutes.
 
@@ -109,7 +109,7 @@ Paired MRR@25 differences with 95% CIs:
 
 | Comparison | Milton's benchmark | Natural products |
 |---|---|---|
-| Dual vs mass only | +0.217 [0.205, 0.228] | +0.235 [0.191, 0.277] |
+| Dual vs mass only | +0.216 [0.205, 0.228] | +0.235 [0.191, 0.277] |
 | Dual vs its no-GNN ablation | +0.097 [0.087, 0.107] | +0.104 [0.061, 0.146] |
 | MIST FP vs DeepSets FP | +0.029 [0.022, 0.036] | |
 | Aggregated vs one spectrum (dual) | | +0.036 [0.019, 0.054] |
@@ -134,6 +134,22 @@ COCONUT can supply it.
 - COCONUT contains 249 of the 250 answers.
 - About 4× more candidates per pool roughly halves MRR@25, but the dual model still doubles mass alone.
 
+**Retraining with COCONUT negatives** (section 11, figure 09). The same model, seed and data, but each spectrum's hard
+negatives are drawn from catalog B, so 44% of them are COCONUT structures. The best epoch is chosen on the tune spectra
+scored against catalog B.
+
+| MRR@25 | Mass only | Dual (training negatives) | Dual (+ COCONUT negatives) |
+|---|---:|---:|---:|
+| Milton's 8,068 spectra, catalog B | 0.217 | 0.430 | **0.453** |
+| Natural products, catalog A | 0.392 | **0.627** | 0.608 |
+| Natural products, catalog B | 0.159 | 0.325 | **0.348** |
+| Natural products, catalog C | 0.157 | 0.313 | **0.336** |
+
+- On Milton's benchmark with catalog B, the retrained model gains +0.023 [0.015, 0.031].
+- It is slightly worse with the small catalog A, which is not what Kaggle uses.
+- The Kaggle bundle uses the retrained weights, chosen by tune MRR@25. On the public leaderboard it ties with the
+  original weights (below).
+
 **Cost:** 4.7M parameters, 37 min training, 1.4 GiB peak GPU memory, and about 8–10 ms per spectrum.
 
 **Figures** (`figures/`):
@@ -146,13 +162,14 @@ COCONUT can supply it.
 - `06` example ranking
 - `07` natural products, one spectrum vs aggregated
 - `08` natural products with three candidate catalogs (COCONUT)
+- `09` training with COCONUT negatives vs training negatives only
 
 ### Kaggle
 
 CASMI26 is a code competition: only a `submission.csv` written by a Kaggle notebook running offline is scored.
 
 - **Inference notebook:** [`kaggle/casmi26_dual_reranker_inference.ipynb`](kaggle/casmi26_dual_reranker_inference.ipynb).
-  It loads the bundle exported by section 11 of the main notebook, so it needs no RDKit and no internet.
+  It loads the bundle exported by section 12 of the main notebook, so it needs no RDKit and no internet.
 - **Tested locally:** about 1 minute on the visible `test.parquet`. Its 400 ranked lists match the main pipeline's
   exactly.
 - **Upload and submit:** see [`kaggle/README.md`](kaggle/README.md).
@@ -161,10 +178,14 @@ CASMI26 is a code competition: only a `submission.csv` written by a Kaggle noteb
 |---|---:|
 | Catalog A: training structures | 0.138 |
 | Catalog B: training + COCONUT | **0.192** |
+| Catalog B, retrained with COCONUT negatives | 0.190 |
 
-The top of the public leaderboard is about 0.55. The jump from A to B shows that many hidden test molecules are only
-in COCONUT. The rest of the gap comes from ranking within larger pools; training with COCONUT structures as negatives
-is the next step. Retrieval cannot recover Kaggle's class-3 (novel) structures.
+The top of the public leaderboard is about 0.55.
+- The jump from A to B shows that many hidden test molecules can only be found through COCONUT.
+- Retraining with COCONUT negatives helps offline (+0.023 on 8,068 spectra) but not measurably on the public
+  leaderboard, which scores only part of the ~400 test molecules.
+- The remaining gap is most likely candidate coverage beyond COCONUT (PubChem) and class-3 (novel) structures,
+  which retrieval cannot recover.
 
 ## Literature
 

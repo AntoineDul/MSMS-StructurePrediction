@@ -1,0 +1,4 @@
+catalog,Mass only,Dual MIST+GNN,Dual MIST+GNN (COCONUT negatives)
+A. training only,0.392,0.6265,0.6078
+B. training + COCONUT,0.1585,0.325,0.3479
+"C. as B, answers only via COCONUT",0.1574,0.3131,0.3363

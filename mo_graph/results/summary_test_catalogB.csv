@@ -1,0 +1,4 @@
+,top1,top5,mrr25,candidate recall
+Mass only,0.1228,0.3123,0.2171,0.9491
+Dual MIST+GNN,0.2998,0.5892,0.4298,0.9491
+Dual MIST+GNN (COCONUT negatives),0.3196,0.6136,0.4532,0.9491

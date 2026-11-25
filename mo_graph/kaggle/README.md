@@ -6,7 +6,7 @@ is that notebook. It needs only numpy, pandas, pyarrow and torch, all preinstall
 
 ## 1. Build the bundle
 
-Run `../dual_encoder_reranker.ipynb`. Its section 11 writes `bundle/` (git-ignored, ~165 MB):
+Run `../dual_encoder_reranker.ipynb`. Its section 12 writes `bundle/` (git-ignored, ~165 MB):
 
 | File | Content |
 |---|---|

@@ -502,12 +502,20 @@ class Scorer:
         return s, soc, flat_c, scal, keys
 
     @torch.no_grad()
-    def embed_catalog(self, model, bs=1024):
+    def embed_catalog(self, model, bs=1024, ids=None):
+        """Graph embeddings of the catalog, kept in CPU memory (725k x 256 floats would not fit beside training on a
+        4 GB GPU). With `ids`, only those rows are computed and the rest stay zero."""
         model.eval()
         if self.cat.device.type == "cuda":
             torch.cuda.empty_cache()
-        return torch.cat([model.graph(self.cat.graph_batch(np.arange(i, min(i + bs, self.cat.N))))
-                          for i in range(0, self.cat.N, bs)])
+        ids = np.arange(self.cat.N) if ids is None else np.asarray(ids)
+        out = None
+        for i in range(0, len(ids), bs):
+            z = model.graph(self.cat.graph_batch(ids[i:i + bs])).float().cpu()
+            if out is None:
+                out = torch.zeros(self.cat.N, z.shape[1])
+            out[torch.as_tensor(ids[i:i + bs])] = z
+        return out
 
     @torch.no_grad()
     def score_pools(self, model, items, zg_all=None, chunk=24):
@@ -518,7 +526,7 @@ class Scorer:
             part = items[i:i + chunk]
             pa = self.build_pairs([(q, self.cat.fid[c]) for q, p in part for c in p], cache=True)
             s, soc, flat_c, scal, _ = self.assemble([q for q, _ in part], [p for _, p in part], pa)
-            zg = zg_all[torch.as_tensor(flat_c, device=self.cat.device)] if model.use_graph else None
+            zg = zg_all[torch.as_tensor(flat_c)].to(self.cat.device) if model.use_graph else None
             score, _, fp_ll = model(s, soc, self.cat.unpack_fp(flat_c), scal, zg=zg)
             score, fp_ll = score.float().cpu().numpy(), fp_ll.float().cpu().numpy()
             off = 0
